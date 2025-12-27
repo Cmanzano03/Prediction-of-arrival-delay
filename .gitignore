@@ -1,0 +1,46 @@
+# --- Python & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Entornos Virtuales (Virtualenvs / Conda) ---
+# Es buena práctica ignorar cualquier nombre común de entorno
+.env
+.venv
+env/
+venv/
+ENV/
+.conda/
+
+# --- Jupyter Notebooks ---
+# Ignora los puntos de control automáticos
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# --- Apache Spark (Local) ---
+# Archivos y carpetas que Spark genera al ejecutarse en local
+metastore_db/
+derby.log
+spark-warehouse/
+
+# --- IDEs & SO ---
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# --- DATOS DEL PROYECTO (Solicitado) ---
+# Ignoramos la carpeta específica de datos de entrenamiento
+training_data/flight_data/
+
+# --- Archivos de datos sueltos (Seguridad extra) ---
+# Para evitar subir csv o parquets accidentales fuera de la carpeta designada
+*.csv
+*.parquet
+*.avro
+
+# --- Entregables/Modelos (Opcional) ---
+# [cite_start]El PDF pide entregar 'best_model'[cite: 116, 122].
+# Normalmente se ignora, pero para la entrega asegúrate de que esté
+# versionado o descomenta la línea siguiente si prefieres no subirlo a git:
+# best_model/
