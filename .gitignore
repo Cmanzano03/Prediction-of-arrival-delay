@@ -32,6 +32,11 @@ spark-warehouse/
 # --- DATOS DEL PROYECTO (Solicitado) ---
 # Ignoramos la carpeta específica de datos de entrenamiento
 training_data/flight_data/
+# Ignoramos la carpeta específica de datos de prueba
+test_data/
+# Ignoramos la carpeta específica de datos extra
+extra_data/
+
 
 # --- Archivos de datos sueltos (Seguridad extra) ---
 # Para evitar subir csv o parquets accidentales fuera de la carpeta designada
@@ -43,4 +48,4 @@ training_data/flight_data/
 # [cite_start]El PDF pide entregar 'best_model'[cite: 116, 122].
 # Normalmente se ignora, pero para la entrega asegúrate de que esté
 # versionado o descomenta la línea siguiente si prefieres no subirlo a git:
-# best_model/
+# best_model/test_data/
