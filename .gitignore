@@ -49,3 +49,5 @@ extra_data/
 # Normalmente se ignora, pero para la entrega asegúrate de que esté
 # versionado o descomenta la línea siguiente si prefieres no subirlo a git:
 # best_model/test_data/
+
+check_point_v1/
