@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorAssembler","timestamp":1767308175422,"sparkVersion":"4.0.1","uid":"VectorAssembler_56501f5b06cf","paramMap":{"outputCol":"features","inputCols":["num_features_scaled","UniqueCarrier_ohe","Origin_ohe","Dest_ohe","PlaneManufacturer_ohe"]},"defaultParamMap":{"outputCol":"VectorAssembler_56501f5b06cf__output","handleInvalid":"error"}}
