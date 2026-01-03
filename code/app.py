@@ -12,12 +12,14 @@
 
 
 import sys
-import argparse
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.ml import PipelineModel
 from pyspark.ml.evaluation import RegressionEvaluator
-from pyspark.sql.types import StructType, StructField, IntegerType, StringType, DoubleType
+from pyspark.ml.tuning import CrossValidatorModel
+from pyspark.ml import PipelineModel # Keep this if you use it elsewhere
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType
 
 # -------------------------------------------------------------------------
 # SCHEMA DEFINITION
@@ -64,6 +66,9 @@ def create_spark_session():
         .appName("FlightDelayPredictionInference") \
         .config("spark.sql.legacy.timeParserPolicy", "CORRECTED") \
         .getOrCreate()
+    # Set log level to ERROR to suppress INFO and WARN messages
+    spark.sparkContext.setLogLevel("ERROR")
+    
     return spark
 
 def validate_input_schema(df):
@@ -131,7 +136,6 @@ def preprocess_test_data(spark, raw_df, planes_path):
         "ActualElapsedTime",
         "AirTime",
         "TaxiIn",
-        "Diverted",
         "CarrierDelay",
         "WeatherDelay",
         "NASDelay",
@@ -144,7 +148,7 @@ def preprocess_test_data(spark, raw_df, planes_path):
     
     # Filter out Cancelled and Diverted flights
     # Rationale: The model was trained only on completed flights.
-    df_clean = df_clean.filter("Cancelled == 0 AND Diverted == 0")
+    df_clean = df_clean.filter("Cancelled == 0 AND Diverted == 0").drop("Cancelled", "Diverted", "CancellationCode")
     
     # Drop 'CRSElapsedTime' (correlated with Distance) and 'FlightNum' (high cardinality/noise)
     df_clean = df_clean.drop("CRSElapsedTime", "FlightNum")
@@ -172,6 +176,16 @@ def preprocess_test_data(spark, raw_df, planes_path):
     enriched_df = df_clean.join(F.broadcast(planes_clean), 
                                 df_clean.TailNum == planes_clean.TailNum_Ref, "left")
     
+    # QA Checkpoint: Monitor data loss and join success rate
+    total_count = enriched_df.count()
+    null_planes = enriched_df.filter(F.col("PlaneManufacturer").isNull()).count()
+    print(f"[QA INFO] Total records after join: {total_count}")
+    if total_count == 0:
+        print("[QA CRITICAL] No records found after joining with plane metadata. Check input data quality.")
+        sys.exit(1) # Stop execution before it fails in MLlib
+    else:    
+        print(f"[QA INFO] Flights without plane metadata (will be imputed): {null_planes} ({(null_planes/total_count)*100:.2f}%)")
+    
     
     # -------------------------------------------------------------------------
     # 4. FEATURE ENGINEERING: DERIVED VARIABLES
@@ -182,7 +196,7 @@ def preprocess_test_data(spark, raw_df, planes_path):
     enriched_df = enriched_df.withColumn(
         "PlaneAge", 
         (F.col("Year") - F.expr("try_cast(PlaneYear AS INT)")).cast("int")
-    ).drop("TailNum", "PlaneYear")
+    ).drop("TailNum", "PlaneYear", "TailNum_Ref", "Year")
 
     # -------------------------------------------------------------------------
     # 5. ROBUST IMPUTATION & SANITIZATION (Notebook Logic Adaptation)
@@ -193,7 +207,7 @@ def preprocess_test_data(spark, raw_df, planes_path):
     # missing categorical values with a label known to the model during training.
     
     # Mode from training set (Must match training logic exactly)
-    TRAIN_MODE_MANUFACTURER = "BOEING" 
+    TRAIN_MODE_MANUFACTURER = "boeing" 
     
     enriched_df = enriched_df.fillna({
         "PlaneAge": 7,  # Median from training EDA
@@ -243,20 +257,23 @@ def preprocess_test_data(spark, raw_df, planes_path):
     # - Categoric: Use the "Mode" (most frequent) to ensure compatibility with OHE.
     
     imputation_values = {
-        'CRSArrTime': 1490.96,
-        'CRSDepTime': 1324.43,
-        'DayOfWeek': 3.94,
-        'DepDelay': 8.76,
-        'DepHour': 12.98,
+        # Integer Columns: Must use integer values
+        'CRSArrTime': 1491,   # Rounded from 1490.96
+        'CRSDepTime': 1324,   # Rounded from 1324.43
+        'DayOfWeek': 4,
+        'DepDelay': 9,        # Rounded from 8.76
+        'DepHour': 13,        # Rounded from 12.98
+        'Distance': 690,      # Rounded from 689.85
+        'Month': 7,           # Rounded from 6.62
+        'PlaneAge': 10,       # Rounded from 9.59
+        'TaxiOut': 16,        # Explicit integer
+        
+        # String Columns: Matching types
         'Dest': 'ATL',
-        'Distance': 689.85,
-        'Month': 6.62,
         'Origin': 'ATL',
-        'PlaneAge': 9.59,
         'PlaneManufacturer': 'boeing',
-        'TaxiOut': 16.0,
         'UniqueCarrier': 'WN'
-        }
+    }
 
     # Apply the imputation map only to columns that exist in the current DataFrame
     # This prevents errors if some columns were dropped earlier
@@ -266,6 +283,13 @@ def preprocess_test_data(spark, raw_df, planes_path):
     # -------------------------------------------------------------------------
     # 8. SCHEMA ENFORCEMENT
     # -------------------------------------------------------------------------
+
+    final_count = final_df.count()
+    print(f"[QA INFO] Final records ready for prediction/test: {final_count}")
+
+    if final_count == 0:
+        print("[QA CRITICAL] No valid records found for prediction. Check input data quality.")
+        sys.exit(1) # Stop execution before it fails in MLlib
     
     # Explicitly select columns in the order expected by the model's VectorAssembler.
     # This acts as a final safeguard against schema mismatches.
@@ -284,11 +308,27 @@ def main(test_data_path):
     # Initialize Spark
     spark = create_spark_session()
     
-    # Hardcoded paths based on project structure (can be moved to args if needed)
-    # The model path is retrieved from the notebook's final save 
-    model_path = "models/best_flight_delay_model"
-    #PATH TO AUXILIARY DATA, MODIFY IF NEEDED TO MATCH YOUR STRUCTURE
-    planes_path = "../training_data/flight_data/plane-data.csv"
+# -------------------------------------------------------------------------
+    # DYNAMIC PATH RESOLUTION
+    # -------------------------------------------------------------------------
+    # 1. Get the absolute path of the current script (app.py)
+    # This works regardless of where you call spark-submit from.
+    script_dir = os.path.dirname(os.path.abspath(__file__)) # Pointing to 'code/'
+    
+    # 2. Get the project root (one level up from 'code/')
+    project_root = os.path.dirname(script_dir)
+    
+    # 3. Build paths relative to the script location
+    # Model is inside 'code/models/...'
+    model_path = os.path.join(script_dir, "models", "best_flight_delay_model")
+    
+    # Plane data is inside 'training_data/flight_data/...'
+    planes_path = os.path.join(project_root, "training_data", "flight_data", "plane-data.csv")
+
+    # Log resolved paths for debugging (QA visibility)
+    print(f"[DEBUG] Script directory: {script_dir}")
+    print(f"[DEBUG] Resolved Model path: {model_path}")
+    print(f"[DEBUG] Resolved Planes path: {planes_path}")
 
     try:
         print(f"Loading test data from: {test_data_path}")
@@ -304,11 +344,26 @@ def main(test_data_path):
         validate_input_schema(raw_test_df)
 
         # Apply same preprocessing logic used during training
-        processed_test_df = preprocess_test_data(spark, raw_test_df, planes_path, airports_path)
-
-        # Load the best_model (PipelineModel includes all preprocessing stages) 
-        print(f"Loading trained PipelineModel from: {model_path}")
-        model = PipelineModel.load(model_path)
+        processed_test_df = preprocess_test_data(spark, raw_test_df, planes_path)
+        
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at: {model_path}")
+        else:
+            # -------------------------------------------------------------------------
+            # LOAD MODEL (Handling CrossValidator vs Pipeline)
+            # -------------------------------------------------------------------------
+            print(f"[EXECUTION] Loading Model from: {model_path}")
+            
+            try:
+                # We first try to load it as a CrossValidatorModel
+                # because the notebook likely saved the entire CV process.
+                cv_model = CrossValidatorModel.load(model_path)
+                model = cv_model.bestModel
+                print("[INFO] CrossValidatorModel detected. Best model extracted successfully.")
+            except Exception:
+                # Fallback for simple PipelineModels
+                print("[INFO] Attempting to load as standard PipelineModel...")
+                model = PipelineModel.load(model_path)
 
         # Perform predictions
         # The transform() method handles Indexing, Encoding, and Scaling automatically 
@@ -330,8 +385,8 @@ def main(test_data_path):
         print("="*50)
 
         # Show a sample of predictions for manual verification
-        print("\nSample Predictions:")
-        predictions.select("UniqueCarrier", "DepDelay", "ArrDelay", "prediction").show(10)
+        print("\nSample Predictions (Only a few columns to avoid collapsing the terminal):")
+        predictions.select("UniqueCarrier", "DepDelay", "ArrDelay", "prediction").show(5)
 
     except Exception as e:
         print(f"Error during execution: {str(e)}")
@@ -340,9 +395,33 @@ def main(test_data_path):
         spark.stop()
 
 if __name__ == "__main__":
-    # Ensure the test data path is passed as an argument
+    # 1. Check number of arguments
     if len(sys.argv) < 2:
+        print("[ERROR] Missing required argument.")
         print("Usage: spark-submit app.py <test_data_csv_path>")
         sys.exit(1)
     
-    main(sys.argv[1])
+    test_path = sys.argv[1]
+
+    # 2. Check if the path exists (Local Filesystem Check)
+    # Note: os.path.exists works for local paths. 
+    # If using HDFS/S3, this check might need to be bypassed.
+    if not os.path.exists(test_path):
+        print(f"[ERROR] The file path provided does not exist: {test_path}")
+        sys.exit(1)
+
+    # 3. Check if it's a file and not a directory
+    if not os.path.isfile(test_path):
+        print(f"[ERROR] The path provided is not a file: {test_path}")
+        sys.exit(1)
+
+    # 4. (Optional) Check file extension
+    valid_extensions = ('.csv', '.csv.bz2', '.bz2')
+    if not test_path.lower().endswith(valid_extensions):
+        print(f"[WARNING] The file '{test_path}' extension is not standard. "
+              "Spark will attempt to infer the codec, but this might fail.")
+
+    print(f"[INFO] Path validation successful. Starting Spark application for: {test_path}")
+    
+    # Proceed to main execution
+    main(test_path)

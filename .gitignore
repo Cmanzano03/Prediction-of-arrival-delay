@@ -32,6 +32,7 @@ spark-warehouse/
 # --- DATOS DEL PROYECTO (Solicitado) ---
 # Ignoramos la carpeta específica de datos de entrenamiento
 training_data/flight_data/
+train_dataset/
 # Ignoramos la carpeta específica de datos de prueba
 test_data/
 # Ignoramos la carpeta específica de datos extra
