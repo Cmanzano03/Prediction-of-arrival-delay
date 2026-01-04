@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorAssembler","timestamp":1767464026137,"sparkVersion":"4.0.1","uid":"VectorAssembler_524d0431e731","paramMap":{"inputCols":["Month","DayOfWeek","DepHour","DepDelay","TaxiOut","Distance","PlaneAge"],"outputCol":"num_features_raw"},"defaultParamMap":{"outputCol":"VectorAssembler_524d0431e731__output","handleInvalid":"error"}}

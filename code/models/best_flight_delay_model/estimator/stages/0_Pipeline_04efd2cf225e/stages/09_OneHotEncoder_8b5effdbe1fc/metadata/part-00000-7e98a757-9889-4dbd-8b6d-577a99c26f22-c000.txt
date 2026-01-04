@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.OneHotEncoder","timestamp":1767464025879,"sparkVersion":"4.0.1","uid":"OneHotEncoder_8b5effdbe1fc","paramMap":{"outputCol":"PlaneManufacturer_ohe","inputCol":"PlaneManufacturer_idx"},"defaultParamMap":{"dropLast":true,"outputCol":"OneHotEncoder_8b5effdbe1fc__output","handleInvalid":"error"}}

@@ -44,6 +44,8 @@ extra_data/
 *.csv
 *.parquet
 *.avro
+*.pdf
+
 
 # --- Entregables/Modelos (Opcional) ---
 # [cite_start]El PDF pide entregar 'best_model'[cite: 116, 122].

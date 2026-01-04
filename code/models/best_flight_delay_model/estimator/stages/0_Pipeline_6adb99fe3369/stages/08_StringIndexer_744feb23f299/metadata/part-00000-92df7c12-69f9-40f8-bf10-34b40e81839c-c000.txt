@@ -1,1 +1,0 @@
-{"class":"org.apache.spark.ml.feature.StringIndexer","timestamp":1767308175282,"sparkVersion":"4.0.1","uid":"StringIndexer_744feb23f299","paramMap":{"inputCol":"PlaneManufacturer","handleInvalid":"keep","outputCol":"PlaneManufacturer_idx"},"defaultParamMap":{"handleInvalid":"error","outputCol":"StringIndexer_744feb23f299__output","stringOrderType":"frequencyDesc"}}

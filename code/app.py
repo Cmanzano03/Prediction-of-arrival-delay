@@ -308,23 +308,32 @@ def main(test_data_path):
     # Initialize Spark
     spark = create_spark_session()
     
-# -------------------------------------------------------------------------
-    # DYNAMIC PATH RESOLUTION
+    # -------------------------------------------------------------------------
+    # DYNAMIC PATH RESOLUTION (STANDALONE VERSION)
     # -------------------------------------------------------------------------
     # 1. Get the absolute path of the current script (app.py)
-    # This works regardless of where you call spark-submit from.
-    script_dir = os.path.dirname(os.path.abspath(__file__)) # Pointing to 'code/'
+    script_dir = os.path.dirname(os.path.abspath(__file__)) 
     
-    # 2. Get the project root (one level up from 'code/')
-    project_root = os.path.dirname(script_dir)
+    # 2. Build paths relative to the script location (Self-contained)
     
-    # 3. Build paths relative to the script location
-    # Model is inside 'code/models/...'
+    # Model is inside 'code/models/...' (Assuming you keep the models folder inside code)
     model_path = os.path.join(script_dir, "models", "best_flight_delay_model")
     
-    # Plane data is inside 'training_data/flight_data/...'
-    planes_path = os.path.join(project_root, "training_data", "flight_data", "plane-data.csv")
+    # Plane data is now EXPECTED inside the same folder as app.py
+    planes_path = os.path.join(script_dir, "plane-data.csv")
 
+    # QA Logging
+    print(f"[DEBUG] Script directory: {script_dir}")
+    print(f"[DEBUG] Model path: {model_path}")
+    print(f"[DEBUG] Planes path: {planes_path}")
+    
+    # -------------------------------------------------------------------------
+    # VALIDATION (FAIL FAST)
+    # -------------------------------------------------------------------------
+    if not os.path.exists(planes_path):
+        print(f"[CRITICAL ERROR] Auxiliary file 'plane-data.csv' not found at {planes_path}")
+        print("Please ensure plane-data.csv is in the same directory as app.py")
+        sys.exit(1)
     # Log resolved paths for debugging (QA visibility)
     print(f"[DEBUG] Script directory: {script_dir}")
     print(f"[DEBUG] Resolved Model path: {model_path}")
